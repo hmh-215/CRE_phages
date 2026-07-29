@@ -95,6 +95,10 @@
 		<pre><code>bash ./Kleb_assembly_annotation.bash</code></pre>
 </div>
 
-<footer>
-		Internal lab pipelines &middot; run on <code>/storage/student9/</code> &middot; update this README when adding or restructuring a script.
-</footer>
+<h2>Publications</h2>
+<ul>
+	<li>Huynh, M. H., Tran, D. Q., Pham, T. T. H., Le, T. T. H., Nguyen, C. L., Tran, T. T. T., & Nguyen, C. H. (Year). Isolation and genomic characterizations of nithesis-like bacteriophage targeting multidrug-resistant Escherichia coli from sewage water. (In press)</li>
+</ul>
+
+<h2>Notes</h2>
+		Internal lab pipelines &middot; run on <code>/storage/student9/</code>
