@@ -18,6 +18,7 @@
 		<tr><td><code>rgi_env</code></td><td>RGI + CARD database</td></tr>
 		<tr><td><code>plasmid</code></td><td>Platon, PlasmidFinder, MOB-suite</td></tr>
 		<tr><td><code>phageterm_env</code></td><td>PhageTerm</td></tr>
+		<tr><td><code>gipsy_env</code></td><td>Gipsy2</td></tr>
 	</table>
 
 <h2 id="repo-structure">Pipelines</h2>
@@ -26,8 +27,9 @@
 		<tr><td><code>phages_assembly_mapping_annotation.bash</code></td><td>Host-read removal, assembly, terminus prediction, annotation</td></tr>
     <tr><td><code>phages_autoBLAST.bash</code></td><td>Connection to NCBI API and automatically performing BLASTN for all phage contigs</td></tr>
     <tr><td><code>nithesis_annotation.bash</code></td><td>Mini script focusing on terminus prediction, annotation of a <i>nithesis</i>-like phage isolated</td></tr>
-    <tr><td><code>Ecoli_assembly_annotation.bash</code><td>De novo assembly and functional annotation of <i>E. coli</i> samples</td></tr>
-    <tr><td><code>Kleb_assembly_annotation.sh</code></td><td>Further analysis on <i>K. pneumoniae</i> samples for AMR profiling</td></tr>
+    <tr><td><code>Ecoli_assembly_annotation.bash</code><br><code>Ecoli_assembly_annotation_2.bash</code><td>De novo assembly and functional annotation of <i>E. coli</i> samples</td></tr>
+    <tr><td><code>Kleb_assembly_annotation.bash</code><br><code>Kleb_assembly_annotation_2.bash</code></td><td>De novo assembly and functional annotation of <i>K. pneumoniae</i> samples</td></tr>
+	<tr><td><code>Kleb_AMRprofiling_reassembly.bash</code></td><td>Further analysis on <i>K. pneumoniae</i> samples for AMR profiling</td></tr>
   </table>
 
 <div class="card">
@@ -39,7 +41,7 @@
 			<span><strong>Input:</strong> Illumina FASTQs, <em>E. coli</em> E72 reference assembly</span>
 			<span><strong>Samples:</strong> 4 phage-bacteria mixtures (A21&ndash;A24)</span>
 		</div>
-		<p>Maps reads to the bacterial host to isolate unmapped (phage) reads, assembles with metaSPAdes, checks completeness with CheckV, predicts termini/orientation with PhageTerm, then annotates with Pharokka, PHANOTATE, and eggNOG-mapper.</p>
+		<p>Maps reads to the bacterial host to isolate unmapped (phage) reads (BWA-MEM, samtools); assembly and post-assembly QC (metaSPAdes, CheckV); termini/orientation prediction (PhageTerm); functional annotations (Pharokka, PHANOTATE, eggNOG-mapper).</p>
 		<pre><code>bash ./phages_assembly_mapping_annotation.bash</code></pre>
 </div>
 
@@ -65,35 +67,49 @@
 			<span><strong>Input:</strong> Annotated phage samples</span>
 			<span><strong>Samples:</strong> Extracted for a <i>nithesis</i>-like phage genome as FASTAs</span>
 		</div>
-		<p>Re-checking completeness with CheckV, extraction of assembled NODEs with >90% completeness, predicts termini/orientation with PhageTerm, then annotates with Pharokka, PHANOTATE, and eggNOG-mapper.</p>
+		<p>Re-checking completeness (CheckV); extraction of assembled NODEs with >90% completeness; termini/orientation prediction (PhageTerm); functional annotations (Pharokka, PHANOTATE, eggNOG-mapper).</p>
 		<pre><code>bash ./phages_assembly_mapping_annotation.bash</code></pre>
 </div>
 
 <div class="card">
 		<div class="card-title">
-			<h3><code>Ecoli_assembly_annotation.bash</code></h3>
+			<h3><code>Ecoli_assembly_annotation.bash</code> and <code>Ecoli_assembly_annotation_2.bash</code></h3>
 			<span class="tag">Bacterial &middot; assembly</span>
   </div>
   <div class="meta-row">
 			<span><strong>Input:</strong> paired-end Illumina FASTQs (<code>WS2762512A*_R1/R2.fastq.gz</code>)</span>
 			<span><strong>Samples:</strong> 11 <i>E. coli</i> clinical isolates</span>
 		</div>
-		<p>QC and trimming (FastQC/Trimmomatic), SPAdes assembly, QUAST/CheckM quality assessment, MLST typing, and functional annotation with Bakta, AMRFinderPlus, and eggNOG-mapper.</p>
-		<pre><code>bash ./Ecoli_assembly_annotation.bash</code></pre>
+		<p>Raw reads QC and trimming (FastQC/Trimmomatic); assembly and post-assembly QC (SPAdes, QUAST/CheckM); sequence typing (MLST); functional annotation (Bakta, AMRFinderPlus, eggNOG-mapper).</p>
+		<pre><code>bash ./Ecoli_assembly_annotation*.bash</code></pre>
 </div>
 
 <div class="card">
 		<div class="card-title">
-			<h3><code>Kleb_assembly_annotation.bash</code></h3>
+			<h3><code>Kleb_assembly_annotation.bash</code> and <code>Kleb_assembly_annotation_2.bash</code></h3>
 			<span class="tag">Bacterial &middot; assembly</span>
   </div>
   <div class="meta-row">
 			<span><strong>Input:</strong> paired-end Illumina FASTQs (<code>WS2762512A*_R1/R2.fastq.gz</code>)</span>
 			<span><strong>Samples:</strong> 9 <i>K. pneumoniae</i> clinical isolates</span>
 		</div>
-		<p>QC and trimming (FastQC/Trimmomatic), SPAdes assembly, QUAST/CheckM quality assessment, MLST typing, and functional annotation with Bakta, AMRFinderPlus, and eggNOG-mapper.</p>
-		<pre><code>bash ./Kleb_assembly_annotation.bash</code></pre>
+		<p>Raw reads QC and trimming (FastQC/Trimmomatic); assembly and post-assembly QC (SPAdes, QUAST/CheckM); sequence typing (MLST); functional annotation (Bakta, AMRFinderPlus, eggNOG-mapper).</p>
+		<pre><code>bash ./Kleb_assembly_annotation*.bash</code></pre>
 </div>
+
+<div class="card">
+		<div class="card-title">
+			<h3><code>Kleb_AMRprofiling_reassembly.bash</code></h3>
+			<span class="tag">Bacterial &middot; AMRprofilling &middot;Re-assembly</span>
+  </div>
+  <div class="meta-row">
+			<span><strong>Input:</strong> paired-end Illumina FASTQs and filtered assemblies (<code>WS2762512A*_R1/R2.fastq.gz</code>)</span>
+			<span><strong>Samples:</strong> 9 <i>K. pneumoniae</i> clinical isolates</span>
+		</div>
+		<p>AMR profiling (RGI, ABRicate); MGEs detection (ISEscan, intergron_finder); Re-annotation (Prokka); pathogenicity island and virulence detection (Gipsy2, PhiSpy, Kleborate); Plasmid assignment (Platon, plasmidfinder, MOBsuite); Re-mapping and chimera detection (BWA-MEM, samtools); Re-assembly for circularization detection and QC (Unicycler, QUAST, CheckM); </p>
+		<pre><code>bash ./Kleb_AMRprofiling_reassembly.bash</code></pre>
+</div>
+
 
 <h2>Publications</h2>
 <ul>
