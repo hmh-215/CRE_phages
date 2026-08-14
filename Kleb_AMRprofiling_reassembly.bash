@@ -14,9 +14,11 @@ CHECKM_INPUTS="${WORK_PATH}/annotation_Kleb/checkm/inputs_Kleb"
 ANNOTATION_KLEB="${WORK_PATH}/annotation_Kleb"
 
 threads=16
+Kleb_ref="/storage/student9/references/reference_genomes/Klebsiella_pneumoniae/ncbi_dataset/data/GCF_000009885.1/GCF_000009885.1_ASM988v1_genomic.fna"
+sample_id=(01 02 03 04 06 07 10 14 15)
 
 #Paths to tools
-islandpath_dimob="/storage/student9/miniconda3/envs/islandpath_env/opt/islandpath/Dimob.pl"
+gipsy2="/storage/student9/tools/gipsy/gipsy/gipsy2"
 
 #Paths to databases
 platon_db="${REF_PATH}/platon_db/db/"
@@ -33,7 +35,7 @@ INTEGRON_KLEB="${MGE_KLEB}/integron"
 ICEFINDER_KLEB="${MGE_KLEB}/icefinder"
 PROKKA_KLEB="${ANNOTATION_KLEB}/prokka"
 PAI_KLEB="${WORK_PATH}/pai_Kleb"
-ISLANDPATH_KLEB="${PAI_KLEB}/islandpath"
+GIPSY_KLEB="${PAI_KLEB}/gipsy"
 KLEBORATE_KLEB="${PAI_KLEB}/kleborate"
 PHISPY_KLEB="${PAI_KLEB}/phispy"
 PLASMID_KLEB="${WORK_PATH}/plasmid_Kleb"
@@ -49,8 +51,8 @@ mkdir -p "${ABRICATE_KLEB}"
 mkdir -p "${ISESCAN_KLEB}"
 mkdir -p "${INTEGRON_KLEB}"
 mkdir -p "${ICEFINDER_KLEB}"
-mkdir -p "${ISLANDPATH_KLEB}"
 mkdir -p "${KLEBORATE_KLEB}"
+mkdir -p "${GIPSY_KLEB}"
 mkdir -p "${PHISPY_KLEB}"
 mkdir -p "${PLATON_KLEB}"
 mkdir -p "${PLASMIDFINDER_KLEB}"
@@ -87,7 +89,7 @@ echo "================================================================"
 
 	echo -e "\e[32m CARD database loaded \e[0m"
 
-for sample_id in "01" "02" "03" "04" "06" "07" "10" "14" "15"
+for sample_id in "${sample_id[@]}"
 do
 	filtered_assembly="${CHECKM_INPUTS}/WS2762512A${sample_id}.contigs.filtered.fasta"
 	bakta_faa="${ANNOTATION_KLEB}/bakta/WS2762512A${sample_id}.bakta/WS2762512A${sample_id}.bakta.faa"
@@ -167,6 +169,11 @@ done
 	echo -e "\e[31m RGI: HEATMAP OF ALL K. PNEUMONIAE SAMPLES \e[0m"
 	echo -e "\e[31m ========================================= \e[0m"
 
+for sample_id in "${sample_id[@]}"
+do
+	mv "${RGI_KLEB}/WS2762512A${sample_id}.rgi/WS2762512A${sample_id}.rgi.json" "${RGI_KLEB}/WS2762512A${sample_id}rgi.json"
+done
+
 	#Aggregate RGI results into a heatmap (gene presence/absence across samples)
 	conda run -n rgi_env rgi heatmap \
 	--input "${RGI_KLEB}" \
@@ -182,7 +189,7 @@ done
 	#IntegronFinder: detects class 1/2/3 integrons and gene cassettes
 	#ICEfinder: web submission prepared here (no local tool available)
 
-for sample_id in "01" "02" "03" "04" "06" "07" "10" "14" "15"
+for sample_id in "${sample_id[@]}"
 do
 	filtered_assembly="${CHECKM_INPUTS}/WS2762512A${sample_id}.contigs.filtered.fasta"
 
@@ -265,7 +272,7 @@ done
 	#RE_ANNOTATION#
 	###############
 
-for sample_id in "01" "02" "03" "04" "06" "07" "10" "14" "15"
+for sample_id in "${sample_id[@]}"
 do
 	filtered_assembly="${CHECKM_INPUTS}/WS2762512A${sample_id}.contigs.filtered.fasta"
 	renamed_assembly="${PROKKA_KLEB}/prokka_inputs/WS2762512A${sample_id}.renamed.fasta"	
@@ -301,44 +308,59 @@ do
 	echo -e "\e[32m Prokka complete for WS2762512A${sample_id} \e[0m"
 done
 
+	echo -e "\e[31m ============================ \e[0m"
+	echo -e "\e[31m PROKKA: REFERENCE NTUH-K2004 \e[0m"
+	echo -e "\e[31m ============================ \e[0m"
+
+	#Annotation of the K.pneumoniae strain
+	conda run -n BPannotation prokka \
+	--force \
+	--cpus ${threads} \
+	--genus Klebsiella \
+	--species pneumoniae \
+	--prefix NTUH-K2004.prokka \
+	--outdir "${PROKKA_KLEB}/NTUH-K2004.prokka" \
+	"${Kleb_ref}"
+
+	echo -e "\e[32m Prokka complete for NTUH-K2004 \e[0m"
+
+
 	###################################
 	#PATHOGENICITY ISLANDS / VIRULENCE#
 	###################################
 
-	#IslandPath-DIMOB: GI prediction from dinucleotide bias + mobility genes
+	#GIPSy: predictions of genomic islands
 	#Kleborate: Klebsiella-specific virulence loci (yersiniabactin, colibactin,
 	#           aerobactin, salmochelin, RmpADC, wzi capsule typing)
 	#PhiSpy: prophage detection within annotated genomes
 
-for sample_id in "01" "02" "03" "04" "06" "07" "10" "14" "15"
+for sample_id in "${sample_id[@]}"
 do
 	filtered_assembly="${CHECKM_INPUTS}/WS2762512A${sample_id}.contigs.filtered.fasta"
 	prokka_gbk="${ANNOTATION_KLEB}/prokka/WS2762512A${sample_id}.prokka/WS2762512A${sample_id}.prokka.gbk"
+	Kleb_ref_gbk="${ANNOTATION_KLEB}/prokka/NTUH-K2004.prokka/NTUH-K2004.prokka.gbk"
 
-	mkdir -p "${ISLANDPATH_KLEB}/WS2762512A${sample_id}.islandpath"
+	mkdir -p "${GIPSY_KLEB}/WS2762512A${sample_id}.gipsy2"
 	mkdir -p "${PHISPY_KLEB}/WS2762512A${sample_id}.phispy"
 
-	ISLANDPATH_OUT="${ISLANDPATH_KLEB}/WS2762512A${sample_id}.islandpath"
 	PHISPY_OUT="${PHISPY_KLEB}/WS2762512A${sample_id}.phispy"
 
-	echo -e "\e[31m ======================== \e[0m"
-	echo -e "\e[31m ISLANDPATH: WS2762512A${sample_id} \e[0m"
-	echo -e "\e[31m ======================== \e[0m"
+	echo -e "\e[31m ==================== \e[0m"
+	echo -e "\e[31m GIPSY2: WS2762512A${sample_id} \e[0m"
+	echo -e "\e[31m ==================== \e[0m"
 
-	#IslandPath-DIMOB predicts genomic islands from:
-	#  (1) Dinucleotide composition bias (foreign DNA signature)
-	#  (2) Presence of mobility genes (integrases, transposases) nearby
-	#Requires GenBank input - Bakta .gbff output used directly
-	(
-		cd "${ISLANDPATH_OUT}" && \
-		conda run -n islandpath_env ${islandpath_dimob} \
-		"${prokka_gbk}" \
-		"${ISLANDPATH_OUT}/WS2762512A${sample_id}.islandpath.tsv"
-	)
+	#export path to lib LD_LIBRARY_PATH propagation
+	export LD_LIBRARY_PATH="/storage/student9/miniconda3/envs/gipsy_env/lib:${LD_LIBRARY_PATH:-}"	
 
-	find "${ISLANDPATH_KLEB}" -name "output.txt" -delete
+	conda run -n gipsy_env ${gipsy2} \
+	-q "${prokka_gbk}" \
+	-s ${Kleb_ref_gbk} \
+	-o "${GIPSY_KLEB}/WS2762512A${sample_id}.gipsy2" \
+	-res -vir -met \
+	-k fisher \
+	--force
 
-	echo -e "\e[32m IslandPath-DIMOB complete for WS2762512A${sample_id} \e[0m"
+	echo -e "\e[32m GIPSY2 complete for WS2762512A${sample_id} \e[0m"
 
 	echo -e "\e[31m ==================== \e[0m"
 	echo -e "\e[31m PHISPY: WS2762512A${sample_id} \e[0m"
@@ -349,7 +371,7 @@ do
 	#Requires GenBank input from Bakta
 	conda run -n recombination PhiSpy.py \
 	"${prokka_gbk}" \
-	-o "${PHISPY_OUT}" \
+	-o "${PHISPY_KLEB}/WS2762512A${sample_id}.phispy" \
 	--output_choice 7 \
 	--threads ${threads}
 
@@ -384,7 +406,7 @@ done
 	#MOB-suite: clusters contigs into complete plasmid reconstructions
 	#           based on relaxase, mate-pair formation, replicon genes
 
-for sample_id in "01" "02" "03" "04" "06" "07" "10" "14" "15"
+for sample_id in "${sample_id[@]}"
 do
 	filtered_assembly="${CHECKM_INPUTS}/WS2762512A${sample_id}.contigs.filtered.fasta"
 
@@ -417,8 +439,7 @@ do
 	echo -e "\e[31m PLASMIDFINDER: WS2762512A${sample_id} \e[0m"
 	echo -e "\e[31m =========================== \e[0m"
 
-	#Identify plasmid replicons (Inc groups) — tells you which
-	#incompatibility group each plasmid belongs to
+	#Identify plasmid replicons (Inc groups) - tells you which incompatibility group each plasmid belongs to
 	#-x: extend search with relaxed thresholds
 	conda run -n plasmid plasmidfinder.py \
 	-i "${filtered_assembly}" \
@@ -434,8 +455,7 @@ do
 	echo -e "\e[31m MOB-SUITE: WS2762512A${sample_id} \e[0m"
 	echo -e "\e[31m ======================= \e[0m"
 
-	#Reconstruct complete plasmids by clustering contigs that share
-	#relaxase, mate-pair formation (mpf), and replicon markers
+	#Reconstruct complete plasmids by clustering contigs that share relaxase, mate-pair formation (mpf), and replicon markers
 	#mob_recon does both typing and contig clustering in one step
 	conda run -n plasmid mob_recon \
 	--infile "${filtered_assembly}" \
@@ -459,7 +479,7 @@ done
 	#  (b) very high coverage spikes = collapsed repeat / chimeric join
 	#Flagstat confirms overall alignment rate (expect >95% for good assembly)
 
-for sample_id in "01" "02" "03" "04" "06" "07" "10" "14" "15"
+for sample_id in "${sample_id[@]}"
 do
 	filtered_assembly="${CHECKM_INPUTS}/WS2762512A${sample_id}.contigs.filtered.fasta"
 	read1t="${PREPROCESSING_KLEB}/WS2762512A${sample_id}.R1.paired.fastq.gz"
@@ -483,8 +503,9 @@ do
 	conda run -n mapping bwa mem \
 	-t ${threads} \
 	"${filtered_assembly}" \
-	"${read1t}" "${read2t}" 
-	2>> "${CHIMERA_OUT}/WS2762512A${sample_id}.bwa.log" | \
+	"${read1t}" "${read2t}" \
+	-o "${CHIMERA_OUT}/WS2762512A${sample_id}.tmp.sam" \
+	2>> "${CHIMERA_OUT}/WS2762512A${sample_id}.bwa.log"
 
 	echo -e "\e[31m ====================== \e[0m"
 	echo -e "\e[31m SAMTOOLS: WS2762512A${sample_id} \e[0m"
@@ -492,7 +513,8 @@ do
 
 	conda run -n mapping samtools sort \
 	-@ ${threads} \
-	-o "${CHIMERA_OUT}/WS2762512A${sample_id}.mapped.bam"
+	-o "${CHIMERA_OUT}/WS2762512A${sample_id}.mapped.bam" \
+	"${CHIMERA_OUT}/WS2762512A${sample_id}.tmp.sam"	
 
 	conda run -n mapping samtools index \
 	"${CHIMERA_OUT}/WS2762512A${sample_id}.mapped.bam"
@@ -515,10 +537,9 @@ do
 	> "${CHIMERA_OUT}/WS2762512A${sample_id}.flagstat.txt"
 
 	echo -e "\e[32m Coverage stats written for WS2762512A${sample_id} \e[0m"
-	echo -e "\e[32m  coverage_summary.tsv — per-contig mean depth and breadth \e[0m"
-	echo -e "\e[32m  depth_per_base.tsv   — full per-base depth (load in Python/R for plotting) \e[0m"
-	echo -e "\e[32m  flagstat.txt         — overall alignment rate (expect >95%) \e[0m"
-
+	echo -e "\e[32m  coverage_summary.tsv - per-contig mean depth and breadth \e[0m"
+	echo -e "\e[32m  depth_per_base.tsv   - full per-base depth (load in Python/R for plotting) \e[0m"
+	echo -e "\e[32m  flagstat.txt         - overall alignment rate (expect >95%) \e[0m"
 done
 
 	#Summarise flagstat mapping rates across all samples
@@ -544,7 +565,7 @@ done
 	#assembly.gfa can be opened in Bandage to visualise the graph and
 	#manually confirm circular topology of plasmids.
 
-for sample_id in "01" "02" "03" "04" "06" "07" "10" "14" "15"
+for sample_id in "${sample_id[@]}"
 do
 	read1t="${PREPROCESSING_KLEB}/WS2762512A${sample_id}.R1.paired.fastq.gz"
 	read2t="${PREPROCESSING_KLEB}/WS2762512A${sample_id}.R2.paired.fastq.gz"
@@ -584,7 +605,7 @@ do
 	echo -e "\e[32m QUAST complete for WS2762512A${sample_id} \e[0m"
 done
 
-for sample_id in "01" "02" "03" "04" "06" "07" "10" "14" "15"
+for sample_id in "${sample_id[@]}"
 do
 	cp -f "${REASSEMBLY_KLEB}/WS2762512A${sample_id}.unicycler/assembly.fasta" \
 	"${REASSEMBLY_QUAST_INPUTS_KLEB}/WS2762512A${sample_id}.unicycler.fasta"
@@ -597,7 +618,7 @@ done
 	conda run -n assembly quast.py \
 	--threads ${threads} \
 	--output-dir "${REASSEMBLY_KLEB}/all_Kleb.unicycler.quast" \
-	"${REASSEMBLY_QUAST_INPUTS_KLEB}"*.fasta
+	"${REASSEMBLY_QUAST_INPUTS_KLEB}/"*.fasta
 
 	echo -e "\e[32m Multi-sample QUAST summary: ${REASSEMBLY_KLEB}/all_Kleb.unicycler.quast \e[0m"
 
@@ -616,13 +637,27 @@ done
 	#Re-check genome completeness after Unicycler assembly
 	#Compare output against Building No.1 CheckM results
 	conda run -n BPstructure checkm lineage_wf \
-	--threads ${threads} \
-	--extension fasta \
+	-t ${threads} \
+	--reduced_tree \
+	--pplacer_threads 1 \
+	-x fasta \
 	--tab_table \
 	"${REASSEMBLY_KLEB}/checkm_inputs" \
 	"${REASSEMBLY_KLEB}/checkm"
 
-	echo -e "\e[32m CheckM complete: ${REASSEMBLY_KLEB}/checkm \e[0m"
+	#CheckM quality assessment and summary
+	if [ -f "${REASSEMBLY_KLEB}/checkm/lineage.ms" ]; then
+		conda run -n BPstructure checkm qa \
+		"${REASSEMBLY_KLEB}/checkm/lineage.ms" \
+		"${REASSEMBLY_KLEB}/checkm" \
+		-o 2 \
+		--tab_table \
+		-f "${REASSEMBLY_KLEB}/checkm/Kleb.reassembly.quality.checkm.tsv"
+		echo -e "\e[32m CheckM complete: ${REASSEMBLY_KLEB}/checkm/Kleb.reassembly.quality.checkm.tsv \e[0m"
+	else
+		echo -e "\e[32m WARNING: lineage.ms not found - skipping checkm qa \e[0m"
+		echo -e "\e[32m Genome quality assessed by assembly statistics instead \e[0m"
+	fi
 
 echo "================================================================"
 echo " K. pneumoniae follow-up analysis - Completed: $(date)"
