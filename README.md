@@ -113,7 +113,7 @@
 
 <h2>Publications</h2>
 <ul>
-	<li>Huynh, M. H., Tran, D. Q., Pham, T. T. H., Le, T. T. H., Nguyen, C. L., Tran, T. T. T., & Nguyen, C. H. (Year). Isolation and genomic characterizations of nithesis-like bacteriophage targeting multidrug-resistant Escherichia coli from sewage water. (In press)</li>
+	<li>Huynh, M. H., Nguyen, Q. H., Tran, Đ. Q., Pham, T. T. H., Nguyen, C. L., Tran, T. T. T. Isolation and genomic characterizations of \textit{nithesis}-like bacteriophage targeting multidrug-resistant \textit{Escherichia coli} from sewage water. \textit{National Biotechnology Conference. 2026. 1326-1331.}</li>
 </ul>
 
 <h2>Notes</h2>
