@@ -1,0 +1,7 @@
+name: gipsy_env
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - gipsy2

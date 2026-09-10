@@ -1,0 +1,7 @@
+name: clermontyping
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - clermontyping=24.02

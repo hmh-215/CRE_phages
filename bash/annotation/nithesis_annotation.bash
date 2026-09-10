@@ -7,7 +7,7 @@ set -euo pipefail
 ################
 
 REF_PATH="/storage/student9/references"
-SAMPLE_PATH="/storage/student9/project/bacteria_phages"
+SAMPLE_PATH="/storage/student9/projects/bacteria_phages"
 WORK_PATH="${SAMPLE_PATH}/nithesis"
 
 #Paths to databases
@@ -15,15 +15,15 @@ checkvdb="${REF_PATH}/checkv-db-v1.5"
 eggnog_db="${REF_PATH}/eggnog_db"
 
 #Create working directories
-mkdir -p "${WORK_PATH}/structure_nithesis"
-mkdir -p "${WORK_PATH}/annotation_nithesis"
-mkdir -p "${ANNOTATION_NITHESIS}/WS2762512A22.term"
-
 STRUCTURE_NITHESIS="${WORK_PATH}/structure_nithesis"
-PHAGETERM_REF="${STRUCTURE_NITHESIS}/phageterm_references"
 ANNOTATION_NITHESIS="${WORK_PATH}/annotation_nithesis"
 PHAGETERM_REF="${WORK_PATH}/phageterm_references"
 TERM_NITHESIS="${ANNOTATION_NITHESIS}/WS2762512A22.term"
+
+mkdir -p "${STRUCTURE_NITHESIS}"
+mkdir -p "${ANNOTATION_NITHESIS}"
+mkdir -p "${PHAGETERM_REF}"
+mkdir -p "${TERM_NITHESIS}"
 
 #Create global log
 LOG="${WORK_PATH}/nithesis_annotation.log"
@@ -225,7 +225,7 @@ done
 	assembly_nithesis="${PHAGETERM_REF}/A22_NODE_2_metaSPAdes.fasta"
 
 	#annotation with prodigal (gold standard method)
-	conda run -n BPannotate pharokka.py \
+	conda run -n BPannotation pharokka.py \
 	-t 16 -f \
 	-d "${REF_PATH}/pharokka_db" \
 	-i "${assembly_nithesis}" \
@@ -238,7 +238,7 @@ done
 	echo -e "\e[31m ======================= \e[0m"
 
 	#additional annotation for comparision with pharokka (alternative ORF caller)
-	conda run -n BPannotate phanotate.py \
+	conda run -n BPannotation phanotate.py \
 	--format tabular \
 	-o "${ANNOTATION_NITHESIS}/WS2762512A${sample_id}.phanotate" \
 	"${assembly_nithesis}"
@@ -261,7 +261,7 @@ do
 	assembly_nithesis="${PHAGETERM_REF}/A${sample_id}_NODE_1_metaSPAdes.fasta"
 
 	#annotation with prodigal (gold standard method)
-	conda run -n BPannotate pharokka.py \
+	conda run -n BPannotation pharokka.py \
 	-t 16 -f \
 	-d "${REF_PATH}/pharokka_db" \
 	-i "${assembly_nithesis}" \
@@ -282,7 +282,7 @@ do
 	assembly_nithesis="${PHAGETERM_REF}/A${sample_id}_NODE_1_metaSPAdes.fasta"
 
 	#additional annotation for comparision with pharokka (alternative ORF caller)
-	conda run -n BPannotate phanotate.py \
+	conda run -n BPannotation phanotate.py \
 	--format tabular \
 	-o "${ANNOTATION_NITHESIS}/WS2762512A${sample_id}.phanotate" \
 	"${assembly_nithesis}"
@@ -303,7 +303,7 @@ do
 
 	#annotate GO terms
 	# Step 1: DIAMOND search only
-	conda run -n BPannotate emapper.py \
+	conda run -n BPannotation emapper.py \
 	--cpu 16 \
 	--dbmem \
 	--data_dir ${eggnog_db} \
@@ -315,7 +315,7 @@ do
 	-o "WS2762512A${sample_id}.eggnog"
 
 	# Step 2: Annotation only using hits from step 1
-	conda run -n BPannotate emapper.py \
+	conda run -n BPannotation emapper.py \
 	--cpu 16 \
 	--data_dir ${eggnog_db} \
 	--temp_dir "${EGGNOG_NITHESIS}" \

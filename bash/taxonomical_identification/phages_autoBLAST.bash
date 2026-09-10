@@ -1,23 +1,39 @@
 #!/bin/bash
 #script for automatical BLASTn for bacteriophage taxonomy identification
-#Building No.1
+set -euo pipefail
 ################
 #GLOBAL SETTING#
 ################
 
 REF_PATH="/storage/student9/references"
 SAMPLE_PATH="/storage/student9/projects/bacteria_phages"
-WORK_PATH="${SAMPLE_PATH}/phages/"
-TOOL_PATH="/storage/student9/tools"
+WORK_PATH="${SAMPLE_PATH}/phages"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(dirname "$(dirname "${SCRIPT_DIR}")")"
+TOOL_PATH="${TOOL_PATH:-${REPO_DIR}/python/ncbi}"
 
 #create working directories
 BLASTN_NR="${WORK_PATH}/BLASTn_nr_phages"
 
-mkdir -p "${WORK_PATH}/BLASTn_nr_phages"
+mkdir -p "${BLASTN_NR}"
 
 #custom .py scripts
-autoBLASTn="${TOOL_PATH}/ncbi_blastn_auto.py"
-combineBLASTtsv="${TOOL_PATH}/ncbi_blastn_combine_tsv.py"
+if [ -f "${TOOL_PATH}/ncbi_blastn_auto.py" ]; then
+	autoBLASTn="${TOOL_PATH}/ncbi_blastn_auto.py"
+elif [ -f "${REPO_DIR}/python/ncbi/ncbi_blastn_auto.py" ]; then
+	autoBLASTn="${REPO_DIR}/python/ncbi/ncbi_blastn_auto.py"
+else
+	autoBLASTn="/storage/student9/tools/ncbi_blastn_auto.py"
+fi
+
+if [ -f "${TOOL_PATH}/ncbi_blastn_combine_tsv.py" ]; then
+	combineBLASTtsv="${TOOL_PATH}/ncbi_blastn_combine_tsv.py"
+elif [ -f "${REPO_DIR}/python/ncbi/ncbi_blastn_combine_tsv.py" ]; then
+	combineBLASTtsv="${REPO_DIR}/python/ncbi/ncbi_blastn_combine_tsv.py"
+else
+	combineBLASTtsv="/storage/student9/tools/ncbi_blastn_combine_tsv.py"
+fi
 
 #create global log
 LOG="${WORK_PATH}/phages_autoBLAST.log"
@@ -53,14 +69,14 @@ do
 	filtered_assembly="${WORK_PATH}/assembly_phages/WS2762512A${sample_id}.contigs.filtered.fasta"
 
 	#BLASTN for each node
-	python3 ${autoBLASTn} \
+	conda run -n ncbi python3 "${autoBLASTn}" \
 	--delay 15 \
 	--input "${filtered_assembly}" \
 	--output "${BLASTN_NR_SAMPLE}" \
 	--email "huonghm.m23bio@usth.edu.vn"
 
 	#combine all nodes into one .tsv for each sample
-	python3 ${combineBLASTtsv} \
+	conda run -n ncbi python3 "${combineBLASTtsv}" \
     	--input  "${BLASTN_NR_SAMPLE}" \
     	--output "${BLASTN_NR_SAMPLE}/WS2762512A${sample_id}.blastn.combined.tsv"
 

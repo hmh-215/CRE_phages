@@ -1,0 +1,7 @@
+name: phageterm_env
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - phageterm=4.1

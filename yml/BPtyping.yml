@@ -1,0 +1,9 @@
+name: BPtyping
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - mlst=2.23.0
+  - kleborate=3.2.4
+  - ectyper=2.0.0
