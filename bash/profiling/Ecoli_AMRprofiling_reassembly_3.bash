@@ -5,12 +5,14 @@
 #   Phase 1 : Extended AMR profiling (RGI CARD + ABRICATE multi-database screening)
 #   Phase 2 : Mobile Genetic Elements (ISEScan IS elements, IntegronFinder integrons, ICEfinder prep)
 #   Phase 3 : Genome re-annotation (Prokka query isolates & E. coli K-12 MG1655 reference)
+#   Phase 3b: Full dataset pan-genome (Panaroo)
+#   Phase 3c: Functional re-annotation of Prokka proteomes (eggNOG-mapper)
 #   Phase 4 : Pathogenicity islands (GIPSy2 vs K-12 MG1655) & prophages (PhiSpy)
 #   Phase 5 : E. coli serotyping (ECTyper), phylogrouping (Clermontyping), MLST & virulence (VFDB/AMRFinderPlus)
 #   Phase 6 : Plasmid assignment & reconstruction (Platon, PlasmidFinder, MOB-suite)
 #   Phase 7 : Chimera detection & read coverage breakpoints (BWA-MEM, samtools, detect_coverage_breakpoints.py)
 #   Phase 8 : Re-assembly & QC (Unicycler, QUAST, CheckM lineage_wf)
-# Building no. 2 (Batch 3)
+# Building no. 4
 set -euo pipefail
 
 ################
@@ -43,19 +45,22 @@ WS2762607A26 WS2762607A27 WS2762607A28 WS2762607A29 WS2762607A30
 WS2762607A31 WS2762607A32 WS2762607A33 WS2762607A34 WS2762607A35
 WS2762607A36 WS2762607A37 WS2762607A38 WS2762607A39 WS2762607A40
 WS2762607A41 WS2762607A42 WS2762607A43 WS2762607A44 WS2762607A45
-WS2762607A46 WS2762607A47 WS2762607A48 WS2762607A53 WS2762607A55)
+WS2762607A46 WS2762607A47 WS2762607A48 WS2762607A53 WS2762607A55
+)
 
 # Optional sample prefix (set e.g. "EC_" or "WS2762512A" to prepend to sample_ids, or leave empty "" if sample_ids has full names)
 SAMPLE_PREFIX=""
 
 # Paths to external custom tools & scripts
 gipsy2="/storage/student9/tools/gipsy/gipsy/gipsy2"
+gipsy_lib="/storage/student9/miniconda3/envs/gipsy_env/lib"   # GIPSy2 shared-library deps (applied to the gipsy2 call only)
 detect_coverage_breakpoints="/storage/student9/tools/detect_coverage_breakpoints.py"
 
 # Paths to reference databases
 platon_db="${REF_PATH}/platon_db/db/"
 plasmidfinder_db="${REF_PATH}/plasmidfinder_db"
 card_db="${REF_PATH}/card_db"
+eggnog_db="${REF_PATH}/eggnog_db"
 
 # Per-tool workflow output directories
 AMR_ECOLI="${WORK_PATH}/amr_Ecoli"
@@ -68,6 +73,8 @@ INTEGRON_ECOLI="${MGE_ECOLI}/integron"
 ICEFINDER_ECOLI="${MGE_ECOLI}/icefinder"
 
 PROKKA_ECOLI="${ANNOTATION_ECOLI}/prokka"
+PANAROO_ECOLI="${WORK_PATH}/panaroo"
+EGGNOG_PROKKA_ECOLI="${ANNOTATION_ECOLI}/eggnog_prokka"
 
 PAI_ECOLI="${WORK_PATH}/pai_Ecoli"
 GIPSY_ECOLI="${PAI_ECOLI}/gipsy"
@@ -95,6 +102,9 @@ mkdir -p "${ISESCAN_ECOLI}"
 mkdir -p "${INTEGRON_ECOLI}"
 mkdir -p "${ICEFINDER_ECOLI}"
 mkdir -p "${PROKKA_ECOLI}/prokka_inputs"
+mkdir -p "${PANAROO_ECOLI}/gff_inputs"
+mkdir -p "${PANAROO_ECOLI}/results"
+mkdir -p "${EGGNOG_PROKKA_ECOLI}"
 mkdir -p "${GIPSY_ECOLI}"
 mkdir -p "${PHISPY_ECOLI}"
 mkdir -p "${ECTYPER_ECOLI}"
@@ -110,13 +120,15 @@ mkdir -p "${REASSEMBLY_QUAST_INPUTS_ECOLI}"
 mkdir -p "${REASSEMBLY_ECOLI}/checkm_inputs"
 
 # Dual-log setup: main run log and dedicated failure/skip tracking log
-LOG="${WORK_PATH}/Ecoli_AMRprofiling_reassembly_3.log"
-FAIL_LOG="${WORK_PATH}/Ecoli_AMRprofiling_reassembly_3.failed_skipped.log"
+LOG="${WORK_PATH}/Ecoli_AMRprofiling_reassembly.log"
+FAIL_LOG="${WORK_PATH}/Ecoli_AMRprofiling_reassembly.failed_skipped.log"
 exec > >(tee -a "${LOG}") 2>&1
 
 echo "======================================================" >> "${FAIL_LOG}"
-echo " Failure & Skip Log — Started: $(date)" >> "${FAIL_LOG}"
+echo " Failure & Skip Log - Started: $(date)" >> "${FAIL_LOG}"
 echo "======================================================" >> "${FAIL_LOG}"
+
+fail_log_start=$(wc -l < "${FAIL_LOG}")   # entries up to here belong to earlier runs
 
 # Helper function to record skipped or failed steps with timestamp
 log_failure() {
@@ -146,6 +158,10 @@ echo "================================================================"
     echo -e "\e[31m ======================= \e[0m"
     echo -e "\e[31m RGI: LOAD CARD DATABASE \e[0m"
     echo -e "\e[31m ======================= \e[0m"
+
+    # rgi load --local writes ./localDB in the CWD and rgi main --local reads it from the CWD:
+    # pin the CWD so the run does not depend on the directory it was launched from
+    cd "${WORK_PATH}"
 
     # Load CARD reference ontology once before per-sample execution
     conda run -n rgi_env rgi load \
@@ -178,7 +194,7 @@ for sample_id in "${sample_ids[@]}"; do
     # Contig-based RGI: identifies full resistance genes from assembly contigs
     expected_rgi_contig="${RGI_OUT}/${sample_name}.rgi.txt"
     if [ -s "${expected_rgi_contig}" ]; then
-        echo -e "\e[32m   [${sample_name}] Contig RGI already completed — skipping \e[0m"
+        echo -e "\e[32m   [${sample_name}] Contig RGI already completed - skipping \e[0m"
         log_failure "Phase1_RGI_contig" "${sample_name}" "SKIPPED_EXISTS" "Output ${expected_rgi_contig} already exists"
     else
         if ! conda run -n rgi_env rgi main \
@@ -201,7 +217,7 @@ for sample_id in "${sample_ids[@]}"; do
     # Protein-based RGI: sensitive detection of point mutations (e.g. gyrA, parC)
     expected_rgi_prot="${RGI_OUT}/${sample_name}.rgi.protein.txt"
     if [ -s "${expected_rgi_prot}" ]; then
-        echo -e "\e[32m   [${sample_name}] Protein RGI already completed — skipping \e[0m"
+        echo -e "\e[32m   [${sample_name}] Protein RGI already completed - skipping \e[0m"
         log_failure "Phase1_RGI_protein" "${sample_name}" "SKIPPED_EXISTS" "Output ${expected_rgi_prot} already exists"
     elif [ -s "${bakta_faa}" ]; then
         if ! conda run -n rgi_env rgi main \
@@ -219,7 +235,7 @@ for sample_id in "${sample_ids[@]}"; do
             echo -e "\e[32m Protein RGI complete for ${sample_name} -> ${expected_rgi_prot} \e[0m"
         fi
     else
-        echo -e "\e[32m   [${sample_name}] Bakta protein FAA not found — skipping protein RGI \e[0m"
+        echo -e "\e[32m   [${sample_name}] Bakta protein FAA not found - skipping protein RGI \e[0m"
         log_failure "Phase1_RGI_protein" "${sample_name}" "INPUT_MISSING" "Bakta protein FAA missing: ${bakta_faa}"
     fi
 
@@ -231,7 +247,7 @@ for sample_id in "${sample_ids[@]}"; do
     for db in card ncbi resfinder argannot vfdb; do
         abricate_tsv="${ABRICATE_OUT}/${sample_name}.abricate.${db}.tsv"
         if [ -s "${abricate_tsv}" ]; then
-            echo -e "\e[32m   [${sample_name}] ABRICATE ${db} already completed — skipping \e[0m"
+            echo -e "\e[32m   [${sample_name}] ABRICATE ${db} already completed - skipping \e[0m"
             log_failure "Phase1_ABRI_${db}" "${sample_name}" "SKIPPED_EXISTS" "Output ${abricate_tsv} already exists"
         else
             if ! conda run -n BPannotation abricate \
@@ -260,10 +276,25 @@ done
     # Aggregate per-database summary tables across all E. coli samples
     for db in card ncbi resfinder argannot vfdb; do
         summary_tsv="${ABRICATE_ECOLI}/all_Ecoli.abricate.${db}.summary.tsv"
-        conda run -n BPannotation abricate --summary \
-        "${ABRICATE_ECOLI}/"*".abricate/"*".abricate.${db}.tsv" \
-        > "${summary_tsv}"
-        echo -e "\e[32m ABRICATE summary written: ${summary_tsv} \e[0m"
+
+        # Summarise only non-empty per-sample tables (a failed run leaves an empty file)
+        mapfile -t abricate_tables < <(find "${ABRICATE_ECOLI}" -mindepth 2 -maxdepth 2 \
+            -name "*.abricate.${db}.tsv" -size +0 | sort)
+
+        if [ "${#abricate_tables[@]}" -eq 0 ]; then
+            echo -e "\e[31m WARNING: No ABRICATE ${db} tables found - skipping summary \e[0m"
+            log_failure "Phase1_ABRI_summary" "ALL" "INPUT_MISSING" "No non-empty ABRICATE ${db} tables in ${ABRICATE_ECOLI}"
+            continue
+        fi
+
+        if ! conda run -n BPannotation abricate --summary \
+            "${abricate_tables[@]}" \
+            > "${summary_tsv}"; then
+            echo -e "\e[31m ERROR: ABRICATE ${db} summary failed \e[0m"
+            log_failure "Phase1_ABRI_summary" "ALL" "EXECUTION_FAILED" "abricate --summary (${db}) non-zero exit status"
+        else
+            echo -e "\e[32m ABRICATE summary written: ${summary_tsv} (${#abricate_tables[@]} samples) \e[0m"
+        fi
     done
 
     echo -e "\e[31m ======================================== \e[0m"
@@ -273,7 +304,7 @@ done
 for sample_id in "${sample_ids[@]}"; do
     sample_name="${SAMPLE_PREFIX}${sample_id}"
     json_src="${RGI_ECOLI}/${sample_name}.rgi/${sample_name}.rgi.json"
-    json_dst="${RGI_ECOLI}/${sample_name}rgi.json"
+    json_dst="${RGI_ECOLI}/${sample_name}.rgi.json"
     if [ -f "${json_src}" ] && [ ! -f "${json_dst}" ]; then
         cp "${json_src}" "${json_dst}"
     fi
@@ -314,9 +345,11 @@ for sample_id in "${sample_ids[@]}"; do
     echo -e "\e[31m ===================== \e[0m"
 
     # Identify insertion sequences (IS elements, families, terminal repeats)
-    if [ -d "${ISESCAN_SAMPLE}/prediction" ]; then
-        echo -e "\e[32m   [${sample_name}] ISEScan prediction already exists — skipping \e[0m"
-        log_failure "Phase2_ISEScan" "${sample_name}" "SKIPPED_EXISTS" "Directory ${ISESCAN_SAMPLE}/prediction already exists"
+    # Test for an actual result file: the prediction/ directory exists as soon as a run starts
+    if compgen -G "${ISESCAN_SAMPLE}/prediction/*.tsv" > /dev/null || \
+       compgen -G "${ISESCAN_SAMPLE}/prediction/*.sum" > /dev/null; then
+        echo -e "\e[32m   [${sample_name}] ISEScan prediction already exists - skipping \e[0m"
+        log_failure "Phase2_ISEScan" "${sample_name}" "SKIPPED_EXISTS" "Prediction output already exists in ${ISESCAN_SAMPLE}/prediction"
     else
         if ! conda run -n recombination isescan.py \
             --nthread "${threads}" \
@@ -335,32 +368,39 @@ for sample_id in "${sample_ids[@]}"; do
 
     # Screen for complete, In0, and CALIN integrons with attC gene cassettes
     INTEGRON_RESULTS="${INTEGRON_SAMPLE}/Results_Integron_Finder_${sample_name}.contigs.filtered"
-    if [ -d "${INTEGRON_RESULTS}" ]; then
-        echo -e "\e[32m   [${sample_name}] IntegronFinder results already exist — skipping \e[0m"
-        log_failure "Phase2_Integron" "${sample_name}" "SKIPPED_EXISTS" "Directory ${INTEGRON_RESULTS} already exists"
+    # 'summary' is written at the end of a run, so its presence marks a completed sample
+    # (the Results directory itself is created at start and would falsely skip a crashed run)
+    if compgen -G "${INTEGRON_RESULTS}/*.summary" > /dev/null; then
+        echo -e "\e[32m   [${sample_name}] IntegronFinder results already exist - skipping \e[0m"
+        log_failure "Phase2_Integron" "${sample_name}" "SKIPPED_EXISTS" "Summary already exists in ${INTEGRON_RESULTS}"
     else
+        # No --circ: assemblies are draft contigs, not closed circular replicons
         if ! conda run -n recombination integron_finder \
             --gbk --pdf \
-            --circ \
+            --cpu "${threads}" \
             --outdir "${INTEGRON_SAMPLE}" \
             "${filtered_assembly}"; then
             echo -e "\e[31m   [${sample_name}] ERROR: IntegronFinder execution failed \e[0m"
             log_failure "Phase2_Integron" "${sample_name}" "EXECUTION_FAILED" "integron_finder non-zero exit status"
         else
             # Standardise output naming for downstream visualisation
+            # (files are named after the contig IDs of the input assembly)
             if [ -d "${INTEGRON_RESULTS}" ]; then
-                for contig_gbk in "${INTEGRON_RESULTS}"/contig_*.gbk; do
+                for contig_gbk in "${INTEGRON_RESULTS}"/*.gbk; do
                     [ -f "${contig_gbk}" ] || continue
                     c_name=$(basename "${contig_gbk}" .gbk)
+                    case "${c_name}" in "${sample_name}."*) continue ;; esac
                     mv "${contig_gbk}" "${INTEGRON_RESULTS}/${sample_name}.${c_name}.integron.gbk"
                 done
 
                 pdf_count=0
-                for pdf_file in "${INTEGRON_RESULTS}"/contig_*_*.pdf; do
+                for pdf_file in "${INTEGRON_RESULTS}"/*_*.pdf; do
                     [ -f "${pdf_file}" ] || continue
-                    integron_num=$(basename "${pdf_file}" .pdf | rev | cut -d'_' -f1 | rev)
-                    contig_id=$(basename "${pdf_file}" .pdf | rev | cut -d'_' -f2- | rev | sed 's/^contig_//')
-                    mv "${pdf_file}" "${INTEGRON_RESULTS}/${sample_name}.contig${contig_id}.integron_${integron_num}.pdf"
+                    pdf_base=$(basename "${pdf_file}" .pdf)
+                    case "${pdf_base}" in "${sample_name}."*) continue ;; esac
+                    integron_num="${pdf_base##*_}"
+                    contig_id="${pdf_base%_*}"
+                    mv "${pdf_file}" "${INTEGRON_RESULTS}/${sample_name}.${contig_id}.integron_${integron_num}.pdf"
                     pdf_count=$(( pdf_count + 1 ))
                 done
                 echo -e "\e[32m IntegronFinder PDFs structured: ${pdf_count} for ${sample_name} \e[0m"
@@ -397,14 +437,19 @@ for sample_id in "${sample_ids[@]}"; do
     fi
 
     # Clean and standardize contig headers (required for GIPSy & PhiSpy compatibility)
-    if [ ! -s "${renamed_assembly}" ]; then
-        awk '/^>/ {
+    # A map (new_contig <TAB> original_header) is kept so Prokka/GIPSy2/PhiSpy contigs can be
+    # joined to RGI/ABRICATE/Platon/MOB-suite results, which use the original contig names.
+    renamed_map="${PROKKA_ECOLI}/prokka_inputs/${sample_name}.contig_map.tsv"
+    if [ ! -s "${renamed_assembly}" ] || [ ! -s "${renamed_map}" ]; then
+        awk -v map="${renamed_map}" 'BEGIN { OFS = "\t"; print "new_contig", "original_header" > map }
+        /^>/ {
             counter++
             print ">contig_" counter
+            print "contig_" counter, substr($0, 2) > map
             next
         }
         { print }' "${filtered_assembly}" > "${renamed_assembly}"
-        echo -e "\e[32m Renamed headers prepared for ${sample_name} \e[0m"
+        echo -e "\e[32m Renamed headers prepared for ${sample_name} (map: ${renamed_map}) \e[0m"
     fi
 
     echo -e "\e[31m ==================== \e[0m"
@@ -412,7 +457,7 @@ for sample_id in "${sample_ids[@]}"; do
     echo -e "\e[31m ==================== \e[0m"
 
     if [ -s "${expected_prokka_gbk}" ]; then
-        echo -e "\e[32m   [${sample_name}] Prokka annotation already completed — skipping \e[0m"
+        echo -e "\e[32m   [${sample_name}] Prokka annotation already completed - skipping \e[0m"
         log_failure "Phase3_Prokka" "${sample_name}" "SKIPPED_EXISTS" "Output ${expected_prokka_gbk} already exists"
     else
         if ! conda run -n BPannotation prokka \
@@ -432,6 +477,15 @@ for sample_id in "${sample_ids[@]}"; do
             echo -e "\e[32m Prokka annotation complete for ${sample_name} -> ${expected_prokka_gbk} \e[0m"
         fi
     fi
+
+    # Stage GFF for full-dataset Panaroo pangenome analysis (Prokka only: mixing Prokka and
+    # Bakta GFFs in one pangenome distorts gene clustering)
+    expected_prokka_gff="${sample_prokka_dir}/${sample_name}.prokka.gff"
+    if [ -s "${expected_prokka_gff}" ]; then
+        cp -f "${expected_prokka_gff}" "${PANAROO_ECOLI}/gff_inputs/${sample_name}.gff"
+    else
+        log_failure "Phase3_Prokka" "${sample_name}" "OUTPUT_MISSING" "Prokka GFF missing - ${sample_name} excluded from Panaroo"
+    fi
 done
 
     # Annotate E. coli K-12 MG1655 reference genome if not already annotated
@@ -443,7 +497,7 @@ done
 
     if [ -s "${Ecoli_ref}" ]; then
         if [ -s "${expected_ref_gbk}" ]; then
-            echo -e "\e[32m Reference K-12 MG1655 Prokka GBK already exists — skipping \e[0m"
+            echo -e "\e[32m Reference K-12 MG1655 Prokka GBK already exists - skipping \e[0m"
             log_failure "Phase3_Prokka_Ref" "K12_MG1655" "SKIPPED_EXISTS" "Output ${expected_ref_gbk} already exists"
         else
             if ! conda run -n BPannotation prokka \
@@ -466,6 +520,105 @@ done
     fi
 
     #################################################
+    # PHASE 3b: PANAROO (FULL DATASET PAN-GENOME)   #
+    #################################################
+
+    echo -e "\e[31m ================================ \e[0m"
+    echo -e "\e[31m PANAROO: FULL DATASET PAN-GENOME \e[0m"
+    echo -e "\e[31m ================================ \e[0m"
+
+    expected_panaroo_summary="${PANAROO_ECOLI}/results/summary_statistics.txt"
+    if [ -s "${expected_panaroo_summary}" ]; then
+        echo -e "\e[32m Panaroo pangenome already completed - skipping \e[0m"
+        log_failure "Phase3b_Panaroo" "ALL" "SKIPPED_EXISTS" "Output ${expected_panaroo_summary} already exists"
+    elif compgen -G "${PANAROO_ECOLI}/gff_inputs/*.gff" > /dev/null; then
+        echo -e "\e[32m GFF files for pangenome: $(ls "${PANAROO_ECOLI}/gff_inputs/"*.gff | wc -l) \e[0m"
+
+        if ! conda run -n pangenome panaroo \
+            --threads "${threads}" \
+            --input "${PANAROO_ECOLI}/gff_inputs/"*.gff \
+            --out_dir "${PANAROO_ECOLI}/results" \
+            --clean-mode moderate \
+            --alignment core \
+            --core_threshold 0.90 \
+            --aligner mafft; then
+            echo -e "\e[31m ERROR: Panaroo pangenome analysis failed \e[0m"
+            log_failure "Phase3b_Panaroo" "ALL" "EXECUTION_FAILED" "panaroo non-zero exit code"
+        else
+            echo -e "\e[32m Pan-genome complete: ${PANAROO_ECOLI}/results/ \e[0m"
+            if [ -f "${expected_panaroo_summary}" ]; then
+                echo -e "\e[32m Pan-genome summary: \e[0m"
+                cat "${expected_panaroo_summary}"
+            fi
+        fi
+    else
+        echo -e "\e[31m WARNING: No GFF files found in ${PANAROO_ECOLI}/gff_inputs/ - skipping Panaroo \e[0m"
+        log_failure "Phase3b_Panaroo" "ALL" "INPUT_MISSING" "No GFF files in ${PANAROO_ECOLI}/gff_inputs/"
+    fi
+
+    #################################################
+    # PHASE 3c: EGGNOG-MAPPER (PROKKA PROTEINS)     #
+    #################################################
+
+    echo -e "\e[33m ====================================================== \e[0m"
+    echo -e "\e[33m PHASE 3c: EGGNOG-MAPPER (PROKKA ANNOTATIONS)          \e[0m"
+    echo -e "\e[33m ====================================================== \e[0m"
+
+for sample_id in "${sample_ids[@]}"; do
+    sample_name="${SAMPLE_PREFIX}${sample_id}"
+    sample_prokka_faa="${PROKKA_ECOLI}/${sample_name}.prokka/${sample_name}.prokka.faa"
+    sample_eggnog_dir="${EGGNOG_PROKKA_ECOLI}/${sample_name}.prokka.eggnog"
+    expected_eggnog="${sample_eggnog_dir}/${sample_name}.prokka.eggnog.emapper.annotations"
+
+    echo -e "\e[31m ================================= \e[0m"
+    echo -e "\e[31m EGGNOG (PROKKA): ${sample_name}   \e[0m"
+    echo -e "\e[31m ================================= \e[0m"
+
+    if [ -s "${expected_eggnog}" ]; then
+        echo -e "\e[32m   [${sample_name}] Prokka EggNOG-mapper output already exists -> skipping \e[0m"
+        log_failure "Phase3c_EggNOG_Prokka" "${sample_name}" "SKIPPED_EXISTS" "Output ${expected_eggnog} already exists"
+    elif [ ! -s "${sample_prokka_faa}" ]; then
+        echo -e "\e[31m   [${sample_name}] Prokka FAA missing -> skipping EggNOG \e[0m"
+        log_failure "Phase3c_EggNOG_Prokka" "${sample_name}" "INPUT_MISSING" "Prokka FAA missing at ${sample_prokka_faa}"
+    else
+        mkdir -p "${sample_eggnog_dir}"
+
+        if ! conda run -n BPannotation emapper.py \
+            --cpu "${threads}" \
+            --data_dir "${eggnog_db}" \
+            --temp_dir "${sample_eggnog_dir}" \
+            --output_dir "${sample_eggnog_dir}" \
+            --no_annot \
+            --override \
+            -i "${sample_prokka_faa}" \
+            -o "${sample_name}.prokka.eggnog"; then
+            echo -e "\e[31m   [${sample_name}] ERROR: Prokka eggNOG diamond search failed \e[0m"
+            log_failure "Phase3c_EggNOG_Prokka" "${sample_name}" "EXECUTION_FAILED" "emapper.py diamond non-zero exit"
+            continue
+        fi
+
+        seed_orthologs="${sample_eggnog_dir}/${sample_name}.prokka.eggnog.emapper.seed_orthologs"
+        if [ -s "${seed_orthologs}" ]; then
+            if ! conda run -n BPannotation emapper.py \
+                --cpu "${threads}" \
+                --data_dir "${eggnog_db}" \
+                --temp_dir "${sample_eggnog_dir}" \
+                --output_dir "${sample_eggnog_dir}" \
+                --annotate_hits_table "${seed_orthologs}" \
+                -m no_search \
+                --tax_scope 1236 \
+                --override \
+                -o "${sample_name}.prokka.eggnog"; then
+                echo -e "\e[31m   [${sample_name}] ERROR: Prokka eggNOG annotation transfer failed \e[0m"
+                log_failure "Phase3c_EggNOG_Prokka" "${sample_name}" "EXECUTION_FAILED" "emapper.py annotate non-zero exit"
+            else
+                echo -e "\e[32m Prokka eggNOG annotation complete for ${sample_name} -> ${expected_eggnog} \e[0m"
+            fi
+        fi
+    fi
+done
+
+    #################################################
     # PHASE 4: PATHOGENICITY ISLANDS & PROPHAGES    #
     #################################################
 
@@ -473,8 +626,8 @@ done
     echo -e "\e[33m PHASE 4: PATHOGENICITY ISLANDS (GIPSY2) & PROPHAGES   \e[0m"
     echo -e "\e[33m ====================================================== \e[0m"
 
-    # Export LD_LIBRARY_PATH for gipsy2 binary library dependencies
-    export LD_LIBRARY_PATH="/storage/student9/miniconda3/envs/gipsy_env/lib:${LD_LIBRARY_PATH:-}"
+    # GIPSy2 needs the gipsy_env libraries on LD_LIBRARY_PATH; this is applied only to the
+    # gipsy2 call below (${gipsy_lib}) so it cannot shadow libraries of BWA/samtools/CheckM/Unicycler.
     Ecoli_ref_gbk="${REF_PROKKA_DIR}/MG1655.prokka.gbk"
 
 for sample_id in "${sample_ids[@]}"; do
@@ -484,7 +637,7 @@ for sample_id in "${sample_ids[@]}"; do
     phispy_out_dir="${PHISPY_ECOLI}/${sample_name}.phispy"
 
     if [ ! -s "${prokka_gbk}" ]; then
-        echo -e "\e[31m   [${sample_name}] Prokka GBK missing — skipping PAI/prophage analysis \e[0m"
+        echo -e "\e[31m   [${sample_name}] Prokka GBK missing - skipping PAI/prophage analysis \e[0m"
         log_failure "Phase4_PAI" "${sample_name}" "INPUT_MISSING" "Prokka GBK ${prokka_gbk} missing"
         continue
     fi
@@ -500,10 +653,11 @@ for sample_id in "${sample_ids[@]}"; do
     expected_gipsy_txt="${gipsy_out}/pathogenicity_islands.txt"
     if [ -s "${Ecoli_ref_gbk}" ]; then
         if [ -s "${expected_gipsy_txt}" ]; then
-            echo -e "\e[32m   [${sample_name}] GIPSy2 output already exists — skipping \e[0m"
+            echo -e "\e[32m   [${sample_name}] GIPSy2 output already exists - skipping \e[0m"
             log_failure "Phase4_GIPSy2" "${sample_name}" "SKIPPED_EXISTS" "Output ${expected_gipsy_txt} already exists"
         else
-            if ! conda run -n gipsy_env "${gipsy2}" \
+            if ! LD_LIBRARY_PATH="${gipsy_lib}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" \
+                conda run -n gipsy_env "${gipsy2}" \
                 -q "${prokka_gbk}" \
                 -s "${Ecoli_ref_gbk}" \
                 -o "${gipsy_out}" \
@@ -517,7 +671,7 @@ for sample_id in "${sample_ids[@]}"; do
             fi
         fi
     else
-        echo -e "\e[31m   [${sample_name}] Reference GBK ${Ecoli_ref_gbk} not available — skipping GIPSy2 \e[0m"
+        echo -e "\e[31m   [${sample_name}] Reference GBK ${Ecoli_ref_gbk} not available - skipping GIPSy2 \e[0m"
         log_failure "Phase4_GIPSy2" "${sample_name}" "INPUT_MISSING" "Reference GBK ${Ecoli_ref_gbk} missing"
     fi
 
@@ -528,7 +682,7 @@ for sample_id in "${sample_ids[@]}"; do
     # Identify prophages integrated in the E. coli genome
     expected_phispy_tsv="${phispy_out_dir}/prophage.tsv"
     if [ -s "${expected_phispy_tsv}" ]; then
-        echo -e "\e[32m   [${sample_name}] PhiSpy prediction already exists — skipping \e[0m"
+        echo -e "\e[32m   [${sample_name}] PhiSpy prediction already exists - skipping \e[0m"
         log_failure "Phase4_PhiSpy" "${sample_name}" "SKIPPED_EXISTS" "Output ${expected_phispy_tsv} already exists"
     else
         if ! conda run -n recombination PhiSpy.py \
@@ -552,17 +706,31 @@ done
     MERGED_PHISPY="${PHISPY_ECOLI}/all_Ecoli.phispy.merged.tsv"
     : > "${MERGED_PHISPY}"
 
+    phispy_header_done=0
 for sample_id in "${sample_ids[@]}"; do
     sample_name="${SAMPLE_PREFIX}${sample_id}"
     phispy_tsv="${PHISPY_ECOLI}/${sample_name}.phispy/prophage.tsv"
 
     if [ -s "${phispy_tsv}" ]; then
-        awk -v s="${sample_name}" 'BEGIN{FS=OFS="\t"} {print s, $0}' "${phispy_tsv}" >> "${MERGED_PHISPY}"
-        echo -e "\e[32m   ${sample_name}: $(wc -l < "${phispy_tsv}") prophage(s) merged \e[0m"
+        # A first line with no purely-numeric field is a header: emit it once (with a 'sample'
+        # column), skip it for later files; every data row gets the sample name prepended.
+        awk -v s="${sample_name}" -v hdr_done="${phispy_header_done}" 'BEGIN{FS=OFS="\t"}
+            NR==1 {
+                is_header = 1
+                for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+$/) is_header = 0
+                if (is_header) { if (!hdr_done) print "sample", $0; next }
+            }
+            { print s, $0 }' "${phispy_tsv}" >> "${MERGED_PHISPY}"
+        phispy_header_done=1
+
+        n_prophage=$(awk 'BEGIN{FS="\t"}
+            NR==1 { h = 1; for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+$/) h = 0; if (h) next }
+            { n++ } END { print n + 0 }' "${phispy_tsv}")
+        echo -e "\e[32m   ${sample_name}: ${n_prophage} prophage(s) merged \e[0m"
     fi
 done
 
-    echo -e "\e[32m Merged PhiSpy table: ${MERGED_PHISPY} (Total: $(wc -l < "${MERGED_PHISPY}") records) \e[0m"
+    echo -e "\e[32m Merged PhiSpy table: ${MERGED_PHISPY} (Total lines: $(wc -l < "${MERGED_PHISPY}")) \e[0m"
 
     #####################################################################
     # PHASE 5: E. COLI SEROTYPE, CLERMONT PHYLOGROUP, MLST & VIRULENCE  #
@@ -579,18 +747,31 @@ done
 
     ALL_MLST_TSV="${MLST_ECOLI}/all_Ecoli.mlst.tsv"
     if [ -s "${ALL_MLST_TSV}" ]; then
-        echo -e "\e[32m MLST summary table already exists — skipping \e[0m"
+        echo -e "\e[32m MLST summary table already exists - skipping \e[0m"
         log_failure "Phase5_MLST" "ALL_COHORT" "SKIPPED_EXISTS" "Output ${ALL_MLST_TSV} already exists"
     else
-        if ! conda run -n BPtyping mlst \
+        # Build the input list from sample_ids (not a folder glob) so only cohort isolates are typed
+        mlst_inputs=()
+        for sample_id in "${sample_ids[@]}"; do
+            mlst_fasta="${CHECKM_INPUTS}/${SAMPLE_PREFIX}${sample_id}.contigs.filtered.fasta"
+            if [ -s "${mlst_fasta}" ]; then
+                mlst_inputs+=("${mlst_fasta}")
+            fi
+        done
+
+        if [ "${#mlst_inputs[@]}" -eq 0 ]; then
+            echo -e "\e[31m WARNING: No input assemblies found for MLST - skipping \e[0m"
+            log_failure "Phase5_MLST" "ALL_COHORT" "INPUT_MISSING" "No filtered assemblies found in ${CHECKM_INPUTS}"
+        elif ! conda run -n BPtyping mlst \
             --scheme ecoli \
             --threads "${threads}" \
-            "${CHECKM_INPUTS}/"*.contigs.filtered.fasta \
+            "${mlst_inputs[@]}" \
             > "${ALL_MLST_TSV}"; then
             echo -e "\e[31m ERROR: MLST command failed \e[0m"
             log_failure "Phase5_MLST" "ALL_COHORT" "EXECUTION_FAILED" "mlst command exited non-zero"
+            rm -f "${ALL_MLST_TSV}"
         else
-            echo -e "\e[32m MLST complete: ${ALL_MLST_TSV} \e[0m"
+            echo -e "\e[32m MLST complete: ${ALL_MLST_TSV} (${#mlst_inputs[@]} isolates) \e[0m"
         fi
     fi
 
@@ -608,25 +789,25 @@ done
         expected_ectyper_tsv="${sample_ectyper_out}/output.tsv"
 
         if [ ! -s "${filtered_assembly}" ]; then
-            echo -e "\e[31m   [${sample_name}] WARNING: input assembly not found — skipping \e[0m"
+            echo -e "\e[31m   [${sample_name}] WARNING: input assembly not found - skipping \e[0m"
             log_failure "Phase5_ECTyper" "${sample_name}" "INPUT_MISSING" "File ${filtered_assembly} missing or empty"
             continue
         fi
 
         if [ -s "${expected_ectyper_tsv}" ]; then
-            echo -e "\e[32m   [${sample_name}] ECTyper already completed — skipping \e[0m"
+            echo -e "\e[32m   [${sample_name}] ECTyper already completed - skipping \e[0m"
             log_failure "Phase5_ECTyper" "${sample_name}" "SKIPPED_EXISTS" "Output ${expected_ectyper_tsv} already exists"
             continue
         fi
 
         mkdir -p "${sample_ectyper_out}"
 
-        if ! conda run -n ectyper ectyper \
+        if ! conda run -n BPtyping ectyper \
             --input "${filtered_assembly}" \
             --output "${sample_ectyper_out}" \
             --cores "${threads}" \
             --verify; then
-            echo -e "\e[31m   [${sample_name}] ERROR: ECTyper execution failed — skipping \e[0m"
+            echo -e "\e[31m   [${sample_name}] ERROR: ECTyper execution failed - skipping \e[0m"
             log_failure "Phase5_ECTyper" "${sample_name}" "EXECUTION_FAILED" "ECTyper exited with non-zero status"
             continue
         fi
@@ -641,8 +822,12 @@ done
     done
 
     # 3. Clermont PCR Phylogrouping (A, B1, B2, C, D, E, F, cryptic clades)
-    # NOTE: Requires environment 'clermontyping' with package 'clermontyping' installed
-    # Install if needed: conda create -n clermontyping -c bioconda clermontyping
+    # NOTE: Requires environment 'clermontyping_env' with clermontyping (provides clermonTyping.sh),
+    #       blast (makeblastdb/blastn) and R (Rscript) installed.
+    # Install if needed: conda create -n clermontyping_env -c bioconda clermontyping
+    # clermonTyping.sh has NO --outdir option (unknown flags are silently ignored): it writes to
+    # ./<--name>/<--name>_phylogroups.txt under the current directory, and exits 0 even when
+    # blast/mash fail (writing NA in column 5). Hence the cd, the bare --name and the NA check below.
     echo -e "\e[31m ======================================= \e[0m"
     echo -e "\e[31m CLERMONTYPING (PHYLOGROUP): ALL SAMPLES \e[0m"
     echo -e "\e[31m ======================================= \e[0m"
@@ -651,31 +836,44 @@ done
         sample_name="${SAMPLE_PREFIX}${sample_id}"
         filtered_assembly="${CHECKM_INPUTS}/${sample_name}.contigs.filtered.fasta"
         sample_clermont_out="${CLERMONT_ECOLI}/${sample_name}.clermont"
-        expected_clermont_phylogroup="${sample_clermont_out}/phylogroup.txt"
+        expected_clermont_phylogroup="${sample_clermont_out}/${sample_name}.clermont_phylogroups.txt"
 
         if [ ! -s "${filtered_assembly}" ]; then
-            echo -e "\e[31m   [${sample_name}] WARNING: input assembly not found — skipping \e[0m"
+            echo -e "\e[31m   [${sample_name}] WARNING: input assembly not found - skipping \e[0m"
             log_failure "Phase5_Clermontyping" "${sample_name}" "INPUT_MISSING" "File ${filtered_assembly} missing or empty"
             continue
         fi
 
-        if [ -s "${expected_clermont_phylogroup}" ]; then
-            echo -e "\e[32m   [${sample_name}] Clermontyping already completed — skipping \e[0m"
+        # Complete = result file exists AND the phylogroup column (5) is not NA
+        if [ -s "${expected_clermont_phylogroup}" ] && \
+           [ "$(awk -F'\t' 'NR==1{print $5}' "${expected_clermont_phylogroup}")" != "NA" ]; then
+            echo -e "\e[32m   [${sample_name}] Clermontyping already completed - skipping \e[0m"
             log_failure "Phase5_Clermontyping" "${sample_name}" "SKIPPED_EXISTS" "Output ${expected_clermont_phylogroup} already exists"
             continue
         fi
 
-        mkdir -p "${sample_clermont_out}"
+        # The tool APPENDS to <name>_phylogroups.txt, so clear any stale/failed attempt first
+        rm -rf "${sample_clermont_out}"
 
-        if ! conda run -n clermontyping clermontyping \
-            --fasta "${filtered_assembly}" \
-            --outdir "${sample_clermont_out}"; then
-            echo -e "\e[31m   [${sample_name}] ERROR: Clermontyping execution failed — skipping \e[0m"
-            log_failure "Phase5_Clermontyping" "${sample_name}" "EXECUTION_FAILED" "Clermontyping exited with non-zero status"
+        if ! conda run -n clermontyping_env --no-capture-output bash -c \
+            "cd '${CLERMONT_ECOLI}' && clermonTyping.sh \
+             --fasta '${filtered_assembly}' \
+             --name '${sample_name}.clermont' \
+             --minimal"; then
+            echo -e "\e[31m   [${sample_name}] ERROR: Clermontyping execution failed - skipping \e[0m"
+            log_failure "Phase5_Clermontyping" "${sample_name}" "EXECUTION_FAILED" "clermonTyping.sh exited with non-zero status"
             continue
         fi
 
-        echo -e "\e[32m Clermont phylogrouping complete for ${sample_name} \e[0m"
+        if [ ! -s "${expected_clermont_phylogroup}" ] || \
+           [ "$(awk -F'\t' 'NR==1{print $5}' "${expected_clermont_phylogroup}")" = "NA" ]; then
+            echo -e "\e[31m   [${sample_name}] ERROR: Clermontyping produced no phylogroup call (check blast/mash/R in clermontyping_env) \e[0m"
+            log_failure "Phase5_Clermontyping" "${sample_name}" "OUTPUT_MISSING" "No phylogroup in ${expected_clermont_phylogroup}"
+            rm -rf "${sample_clermont_out}"
+            continue
+        fi
+
+        echo -e "\e[32m Clermont phylogrouping complete for ${sample_name} -> ${expected_clermont_phylogroup} \e[0m"
     done
 
     # 4. Virulence Determinants (AMRFinderPlus --plus --organism Escherichia)
@@ -694,7 +892,7 @@ for sample_id in "${sample_ids[@]}"; do
     fi
 
     if [ -s "${amrfinder_out}" ]; then
-        echo -e "\e[32m   [${sample_name}] AMRFinderPlus already completed — skipping \e[0m"
+        echo -e "\e[32m   [${sample_name}] AMRFinderPlus already completed - skipping \e[0m"
         log_failure "Phase5_AMRFinder" "${sample_name}" "SKIPPED_EXISTS" "Output ${amrfinder_out} already exists"
     else
         if ! conda run -n ncbi amrfinder \
@@ -749,7 +947,7 @@ for sample_id in "${sample_ids[@]}"; do
     # Classify contigs as chromosomal vs plasmid based on marker HMMs and replication proteins
     expected_platon="${PLATON_OUT}/${sample_name}.chromosome.fasta"
     if [ -s "${expected_platon}" ]; then
-        echo -e "\e[32m   [${sample_name}] Platon classification already exists — skipping \e[0m"
+        echo -e "\e[32m   [${sample_name}] Platon classification already exists - skipping \e[0m"
         log_failure "Phase6_Platon" "${sample_name}" "SKIPPED_EXISTS" "Output ${expected_platon} already exists"
     else
         if ! conda run -n plasmid platon \
@@ -773,7 +971,7 @@ for sample_id in "${sample_ids[@]}"; do
     # Identify incompatibility (Inc) groups and replicon types
     expected_plasmidfinder="${PLASMIDFINDER_OUT}/results_tab.tsv"
     if [ -s "${expected_plasmidfinder}" ]; then
-        echo -e "\e[32m   [${sample_name}] PlasmidFinder output already exists — skipping \e[0m"
+        echo -e "\e[32m   [${sample_name}] PlasmidFinder output already exists - skipping \e[0m"
         log_failure "Phase6_PlasmidFinder" "${sample_name}" "SKIPPED_EXISTS" "Output ${expected_plasmidfinder} already exists"
     else
         if ! conda run -n plasmid plasmidfinder.py \
@@ -795,9 +993,10 @@ for sample_id in "${sample_ids[@]}"; do
     echo -e "\e[31m ======================= \e[0m"
 
     # Cluster contigs into complete plasmids, identify relaxase and mate-pair formation (mpf)
-    expected_mob="${MOBSUITE_OUT}/mobtyper_results.txt"
+    # contig_report.txt is always written; mobtyper_results.txt only exists when a plasmid is found
+    expected_mob="${MOBSUITE_OUT}/contig_report.txt"
     if [ -s "${expected_mob}" ]; then
-        echo -e "\e[32m   [${sample_name}] MOB-suite results already exist — skipping \e[0m"
+        echo -e "\e[32m   [${sample_name}] MOB-suite results already exist - skipping \e[0m"
         log_failure "Phase6_MOBsuite" "${sample_name}" "SKIPPED_EXISTS" "Output ${expected_mob} already exists"
     else
         if ! conda run -n plasmid mob_recon \
@@ -828,7 +1027,7 @@ for sample_id in "${sample_ids[@]}"; do
     read2t="${PREPROCESSING_ECOLI}/${sample_name}.R2.paired.fastq.gz"
 
     if [ ! -s "${filtered_assembly}" ] || [ ! -s "${read1t}" ] || [ ! -s "${read2t}" ]; then
-        echo -e "\e[31m   [${sample_name}] Fastq or assembly missing — skipping chimera check \e[0m"
+        echo -e "\e[31m   [${sample_name}] Fastq or assembly missing - skipping chimera check \e[0m"
         log_failure "Phase7_Chimera" "${sample_name}" "INPUT_MISSING" "Reads or assembly missing for ${sample_name}"
         continue
     fi
@@ -836,51 +1035,58 @@ for sample_id in "${sample_ids[@]}"; do
     CHIMERA_OUT="${CHIMERA_ECOLI}/${sample_name}.chimera"
     mkdir -p "${CHIMERA_OUT}"
 
-    echo -e "\e[31m ======================= \e[0m"
-    echo -e "\e[31m BWA INDEX: ${sample_name} \e[0m"
-    echo -e "\e[31m ======================= \e[0m"
-
-    conda run -n mapping bwa index "${filtered_assembly}"
+    ref_copy="${CHIMERA_OUT}/${sample_name}.assembly.fasta"
+    mapped_bam="${CHIMERA_OUT}/${sample_name}.mapped.bam"
 
     echo -e "\e[31m ===================== \e[0m"
     echo -e "\e[31m BWA MEM: ${sample_name} \e[0m"
     echo -e "\e[31m ===================== \e[0m"
 
-    # Map reads, sort and index BAM
-    mapped_bam="${CHIMERA_OUT}/${sample_name}.mapped.bam"
+    # Index + map + sort + index BAM. Every step is inside one guarded chain so a failure
+    # is logged and the sample skipped instead of aborting the whole run (set -e).
     if [ -s "${mapped_bam}" ]; then
-        echo -e "\e[32m   [${sample_name}] BAM already mapped — skipping BWA \e[0m"
+        echo -e "\e[32m   [${sample_name}] BAM already mapped - skipping BWA \e[0m"
         log_failure "Phase7_BWA" "${sample_name}" "SKIPPED_EXISTS" "Output ${mapped_bam} already exists"
     else
-        conda run -n mapping bwa mem \
-        -t "${threads}" \
-        "${filtered_assembly}" \
-        "${read1t}" "${read2t}" \
-        -o "${CHIMERA_OUT}/${sample_name}.tmp.sam" \
-        2>> "${CHIMERA_OUT}/${sample_name}.bwa.log"
+        # Index a private copy so BWA index files do not pollute ${CHECKM_INPUTS}
+        cp -f "${filtered_assembly}" "${ref_copy}"
 
-        conda run -n mapping samtools sort \
-        -@ "${threads}" \
-        -o "${mapped_bam}" \
-        "${CHIMERA_OUT}/${sample_name}.tmp.sam"
-
+        if ! { conda run -n mapping bwa index "${ref_copy}" && \
+               conda run -n mapping bwa mem \
+                   -t "${threads}" \
+                   "${ref_copy}" \
+                   "${read1t}" "${read2t}" \
+                   -o "${CHIMERA_OUT}/${sample_name}.tmp.sam" \
+                   2>> "${CHIMERA_OUT}/${sample_name}.bwa.log" && \
+               conda run -n mapping samtools sort \
+                   -@ "${threads}" \
+                   -o "${mapped_bam}" \
+                   "${CHIMERA_OUT}/${sample_name}.tmp.sam" && \
+               conda run -n mapping samtools index "${mapped_bam}"; }; then
+            echo -e "\e[31m   [${sample_name}] ERROR: BWA/samtools mapping chain failed \e[0m"
+            log_failure "Phase7_BWA" "${sample_name}" "EXECUTION_FAILED" "bwa index/mem or samtools sort/index failed"
+            # Remove partial products so the sample is not mistaken for 'already mapped'
+            rm -f "${CHIMERA_OUT}/${sample_name}.tmp.sam" "${mapped_bam}" "${mapped_bam}.bai"
+            continue
+        fi
         rm -f "${CHIMERA_OUT}/${sample_name}.tmp.sam"
-        conda run -n mapping samtools index "${mapped_bam}"
     fi
 
-    # Per-contig summary & per-base coverage profile
-    conda run -n mapping samtools coverage \
-    "${mapped_bam}" \
-    > "${CHIMERA_OUT}/${sample_name}.coverage_summary.tsv"
-
-    conda run -n mapping samtools depth \
-    -a \
-    "${mapped_bam}" \
-    > "${CHIMERA_OUT}/${sample_name}.depth_per_base.tsv"
-
-    conda run -n mapping samtools flagstat \
-    "${mapped_bam}" \
-    > "${CHIMERA_OUT}/${sample_name}.flagstat.txt"
+    # Per-contig summary, per-base coverage profile and mapping stats
+    if ! { conda run -n mapping samtools coverage \
+               "${mapped_bam}" \
+               > "${CHIMERA_OUT}/${sample_name}.coverage_summary.tsv" && \
+           conda run -n mapping samtools depth \
+               -a \
+               "${mapped_bam}" \
+               > "${CHIMERA_OUT}/${sample_name}.depth_per_base.tsv" && \
+           conda run -n mapping samtools flagstat \
+               "${mapped_bam}" \
+               > "${CHIMERA_OUT}/${sample_name}.flagstat.txt"; }; then
+        echo -e "\e[31m   [${sample_name}] ERROR: samtools coverage/depth/flagstat failed \e[0m"
+        log_failure "Phase7_Coverage" "${sample_name}" "EXECUTION_FAILED" "samtools coverage/depth/flagstat non-zero exit"
+        continue
+    fi
 
     echo -e "\e[32m Coverage statistics extracted for ${sample_name} \e[0m"
 
@@ -929,7 +1135,7 @@ for sample_id in "${sample_ids[@]}"; do
     echo -e "\e[31m ======================= \e[0m"
 
     if [ -s "${expected_assembly}" ]; then
-        echo -e "\e[32m   [${sample_name}] Unicycler assembly already exists — skipping \e[0m"
+        echo -e "\e[32m   [${sample_name}] Unicycler assembly already exists - skipping \e[0m"
         log_failure "Phase8_Unicycler" "${sample_name}" "SKIPPED_EXISTS" "Output ${expected_assembly} already exists"
     else
         if ! conda run -n assembly unicycler \
@@ -952,10 +1158,13 @@ for sample_id in "${sample_ids[@]}"; do
 
     # QUAST single-isolate assembly metrics
     if [ -s "${expected_assembly}" ]; then
-        conda run -n assembly quast.py \
-        "${expected_assembly}" \
-        --threads "${threads}" \
-        --output-dir "${UNICYCLER_OUT}/quast"
+        if ! conda run -n assembly quast.py \
+            "${expected_assembly}" \
+            --threads "${threads}" \
+            --output-dir "${UNICYCLER_OUT}/quast"; then
+            echo -e "\e[31m   [${sample_name}] ERROR: QUAST failed \e[0m"
+            log_failure "Phase8_QUAST" "${sample_name}" "EXECUTION_FAILED" "quast.py non-zero exit status"
+        fi
 
         # Copy to multi-sample inputs
         cp -f "${expected_assembly}" \
@@ -1010,7 +1219,7 @@ done
 
     echo ""
     echo -e "\e[32m ================================================================ \e[0m"
-    echo -e "\e[32m E. COLI PROFILING & REASSEMBLY COMPLETE — $(date)                \e[0m"
+    echo -e "\e[32m E. COLI PROFILING & REASSEMBLY COMPLETE - $(date)                \e[0m"
     echo -e "\e[32m ================================================================ \e[0m"
     echo ""
     echo -e "\e[32m -- OUTPUT DIRECTORIES ------------------------------------------ \e[0m"
@@ -1036,9 +1245,11 @@ done
     echo -e "\e[32m -- LOG FILES --------------------------------------------------- \e[0m"
     echo -e "\e[32m  Full execution log     : ${LOG} \e[0m"
 
-    # Report count of failed or skipped samples recorded in FAIL_LOG
-    fail_count=$(grep -c '\[FAILED\]\|\[EXECUTION_FAILED\]\|\[OUTPUT_MISSING' "${FAIL_LOG}" 2>/dev/null || echo 0)
-    skip_count=$(grep -c '\[SKIPPED' "${FAIL_LOG}" 2>/dev/null || echo 0)
+    # Count only entries logged during THIS run (FAIL_LOG is appended across reruns).
+    # '|| true' because grep -c exits 1 when it counts zero matches.
+    fail_count=$(tail -n +"$((fail_log_start + 1))" "${FAIL_LOG}" | grep -c '\[EXECUTION_FAILED\]\|\[OUTPUT_MISSING\]' || true)
+    missing_count=$(tail -n +"$((fail_log_start + 1))" "${FAIL_LOG}" | grep -c '\[INPUT_MISSING\]' || true)
+    skip_count=$(tail -n +"$((fail_log_start + 1))" "${FAIL_LOG}" | grep -c '\[SKIPPED' || true)
 
     if [ "${fail_count}" -gt 0 ]; then
         echo -e "\e[31m  Failure/Issues log     : ${FAIL_LOG} (${fail_count} failures detected!) \e[0m"
@@ -1047,11 +1258,13 @@ done
         echo -e "\e[32m  Failure/Issues log     : ${FAIL_LOG} (0 errors recorded) \e[0m"
     fi
     echo -e "\e[32m  Skipped checkpoints    : ${skip_count} records \e[0m"
+    echo -e "\e[32m  Missing inputs         : ${missing_count} records \e[0m"
     echo ""
     echo -e "\e[32m -- SUGGESTED MANUAL & UPSTREAM STEPS --------------------------- \e[0m"
-    echo -e "\e[32m  1. If ECTyper or Clermontyping failed due to missing environments: \e[0m"
-    echo -e "\e[32m     conda create -n ectyper -c bioconda ectyper \e[0m"
-    echo -e "\e[32m     conda create -n clermontyping -c bioconda clermontyping \e[0m"
+    echo -e "\e[32m  1. If ECTyper or Clermontyping failed due to missing tools/environments: \e[0m"
+    echo -e "\e[32m     ECTyper (runs in BPtyping): conda install -n BPtyping -c bioconda ectyper \e[0m"
+    echo -e "\e[32m     Clermontyping (clermontyping_env): conda create -n clermontyping_env -c bioconda clermontyping \e[0m"
+    echo -e "\e[32m     (clermonTyping.sh also needs blast + R in that environment) \e[0m"
     echo -e "\e[32m  2. Submit formatted ICEfinder FASTA files to: \e[0m"
     echo -e "\e[32m     https://bioinfo-mml.sjtu.edu.cn/ICEfinder/ICEfinder.html \e[0m"
     echo -e "\e[32m  3. Open assembly.gfa in Bandage to confirm circular topology \e[0m"
