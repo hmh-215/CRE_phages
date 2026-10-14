@@ -360,9 +360,9 @@ fi
 # PHASE 2: PANAROO PANGENOME          #
 #######################################
 
-echo -e "\e[33m ====================================================== \e[0m"
-echo -e "\e[33m PHASE 2: PANAROO PANGENOME (ALL STAGED PROKKA GFFs)     \e[0m"
-echo -e "\e[33m ====================================================== \e[0m"
+echo -e "\e[33m ============================================================================== \e[0m"
+echo -e "\e[33m PHASE 2: PANAROO PANGENOME (ALL STAGED PROKKA GFFs) + IQTREE PHYLOGENETIC TREE    \e[0m"
+echo -e "\e[33m ============================================================================== \e[0m"
 
 panaroo_stale=false
 if [ -s "${panaroo_matrix}" ]; then
@@ -413,6 +413,50 @@ else
         log_failure "Phase2_Panaroo" "ALL" "OUTPUT_MISSING" "File ${panaroo_matrix} not created"
     else
         echo -e "\e[32m   [Panaroo] complete -> ${panaroo_matrix} \e[0m"
+    fi
+fi
+
+# Re-evaluate alignment path in case Panaroo just created it in Phase 2
+panaroo_core_aln="${PANAROO_RES_DIR}/core_gene_alignment_filtered.aln"
+[ -s "${panaroo_core_aln}" ] || panaroo_core_aln="${PANAROO_RES_DIR}/core_gene_alignment.aln"
+
+# Count samples in cohort (IQ-TREE ultrafast bootstrap -B 1000 requires >= 4 sequences)
+cohort_n=$(wc -l < "${samples_list}")
+
+if [ "${panaroo_stale:-false}" != true ] && [ "${force_collate}" != true ] && [ -s "${out_treefile}" ]; then
+    echo -e "\e[32m   [IQ-TREE] treefile already exists — skipping: ${out_treefile} \e[0m"
+    log_failure "Phase2.5_IQTREE" "ALL" "SKIPPED_EXISTS" "Output ${out_treefile} already exists"
+elif [ ! -s "${panaroo_core_aln}" ]; then
+    echo -e "\e[31m   [IQ-TREE] ERROR: Core gene alignment not found in ${PANAROO_RES_DIR} — skipping \e[0m"
+    log_failure "Phase2.5_IQTREE" "ALL" "INPUT_MISSING" "No core_gene_alignment*.aln found in ${PANAROO_RES_DIR}"
+elif [ "${cohort_n}" -lt 3 ]; then
+    echo -e "\e[31m   [IQ-TREE] WARNING: Fewer than 3 isolates (${cohort_n}) — cannot build tree \e[0m"
+    log_failure "Phase2.5_IQTREE" "ALL" "INPUT_MISSING" "Too few isolates (${cohort_n}) for tree inference"
+else
+    echo -e "\e[32m Running IQ-TREE on $(basename "${panaroo_core_aln}") (${cohort_n} isolates)... \e[0m"
+    
+    # Build IQ-TREE command (-m GTR+F+I+G4 is standard and fast for large bacterial core alignments;
+    # change to -m MFP if you want full ModelFinder testing)
+    iqtree_cmd=(conda run -n phylogeny iqtree
+        -s "${panaroo_core_aln}"
+        --prefix "${iqtree_prefix}"
+        -m GTR+F+I+G4
+        -T "${threads}"
+        -redo)
+
+    # Ultrafast bootstrap (-B 1000) requires at least 4 sequences
+    if [ "${cohort_n}" -ge 4 ]; then
+        iqtree_cmd+=(-B 1000 --alrt 1000)
+    fi
+
+    if ! "${iqtree_cmd[@]}"; then
+        echo -e "\e[31m   [IQ-TREE] ERROR: execution failed — continuing \e[0m"
+        log_failure "Phase2.5_IQTREE" "ALL" "EXECUTION_FAILED" "iqtree non-zero exit code"
+    elif [ ! -s "${out_treefile}" ]; then
+        echo -e "\e[31m   [IQ-TREE] ERROR: expected .treefile missing or empty after run \e[0m"
+        log_failure "Phase2.5_IQTREE" "ALL" "OUTPUT_MISSING" "File ${out_treefile} not created"
+    else
+        echo -e "\e[32m   [IQ-TREE] complete -> ${out_treefile} \e[0m"
     fi
 fi
 

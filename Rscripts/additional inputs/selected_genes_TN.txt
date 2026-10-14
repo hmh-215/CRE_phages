@@ -1,0 +1,45 @@
+# 1. Beta-lactams (ESBLs, AmpC, Carbapenemases, Narrow-spectrum)
+blaCTX-M-15
+blaCTX-M-27
+blaCTX-M-55
+blaDHA-1
+blaOXA-431
+blaTEM-1
+blaEC-5
+
+# 2. Colistin / Polymyxin
+mcr-1.1
+
+# 3. Fluoroquinolones
+qnrS1
+aac(6')-Ib-cr
+oqxA
+oqxB
+
+# 4. Aminoglycosides
+aac(3)-IId
+aac(3)-IIe
+aac(3)-IVa
+AAC(6')-Ib10
+aadA2
+aadA5
+aadA22
+aph(3')-Ia
+aph(3'')-Ib
+aph(6)-Id
+
+# 5. Sulfonamides & Trimethoprim
+sul1
+sul2
+sul3
+dfrA12
+dfrA14
+dfrA17
+
+# 6. Tetracyclines, Phenicols & Fosfomycin
+tet(A)
+tet(B)
+floR
+cmlA1
+catA1
+fosA3
