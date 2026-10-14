@@ -124,6 +124,26 @@
 		<pre><code>bash ./bash/profiling/Ecoli_AMRprofiling_reassembly_1.bash</code></pre>
 </div>
 
+<div class="card">
+		<div class="card-title">
+			<h3>Other python scripts</h3>
+		</div>
+		<div class="meta-row">
+		<ul>
+			<li>merge_data scripts: synthesize reports from raw data outputs of bioinformatic tools</li>
+			<li>ncbi scripts: connect API and perform Blastn automatically from contig files, then merge all contigs reports.</li>
+		</ul>
+</div>
+
+<div class="card">
+		<div class="card-title">
+			<h3>Other Rscripts</h3>
+		</div>
+		<div class="meta-row">
+		<ul>
+			<li>Rendering metadata figure scripts: <code>01_build_merged_table.R</code> for parsing reports generated from merge_data scripts; <code>02_filter_merged_table.R</code> for manipulate raw table; <code>03_plot_amr_tree_heatmap</code> for rendering of metadata figure including phylogenetic tree + sequence type + serotype + AMR heatmap</li>
+		</ul>
+</div>
 
 <h2>Publications</h2>
 <ul>
