@@ -21,27 +21,6 @@
 		<tr><td><code>gipsy_env</code></td><td>Gipsy2</td></tr>
 	</table>
 
-<h2 id="cloning-and-execution">Cloning and Execution</h2>
-	<p>To clone the repository onto your compute environment (e.g. HPC server or local workstation) and prepare the pipelines for execution:</p>
-	<pre><code># 1. Clone the repository
-git clone https://github.com/hmh-215/CRE_phages.git
-# Alternatively via SSH:
-# git clone git@github.com:hmh-215/CRE_phages.git
-
-# 2. Navigate into the repository directory
-cd CRE_phages
-
-# 3. Grant executable permissions to all pipeline scripts
-chmod -R +x bash/
-chmod -R +x python/
-
-# 4. Execute a target pipeline (e.g., phage annotation or bacterial assembly)
-bash ./bash/annotation/phages_assembly_mapping_annotation.bash
-# or
-bash ./bash/annotation/Kleb_assembly_annotation_1.bash
-</code></pre>
-	<p><em>Note:</em> Verify that reference paths and working directories in the <code>GLOBAL SETUP</code> block of each script (e.g., <code>SAMPLE_PATH</code>, <code>REF_PATH</code>) match your filesystem structure before running.</p>
-
 <h2 id="repo-structure">Pipelines</h2>
 	<table>
 		<tr><th>File</th><th>Purpose</th></tr>
@@ -121,7 +100,7 @@ bash ./bash/annotation/Kleb_assembly_annotation_1.bash
 
 <div class="card">
 		<div class="card-title">
-			<h3><code>bash/profiling/Kleb_AMRprofiling_reassembly.bash</code></h3>
+			<h3><code>bash/profiling/Kleb_AMRprofiling_reassembly_*.bash</code></h3>
 			<span class="tag">Bacterial &middot; AMRprofiling &middot; Re-assembly</span>
 		</div>
 		<div class="meta-row">
